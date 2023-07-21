@@ -50,12 +50,19 @@ JackalHardware::JackalHardware()
         &joints_[i].position, &joints_[i].velocity, &joints_[i].effort);
     joint_state_interface_.registerHandle(joint_state_handle);
 
+    /*
     hardware_interface::JointHandle joint_handle(
         joint_state_handle, &joints_[i].velocity_command);
     velocity_joint_interface_.registerHandle(joint_handle);
+    */
+    hardware_interface::JointHandle joint_handle(
+        joint_state_handle, &joints_[i].velocity_command);
+    effort_joint_interface_.registerHandle(joint_handle);
   }
   registerInterface(&joint_state_interface_);
-  registerInterface(&velocity_joint_interface_);
+  /*registerInterface(&velocity_joint_interface_);*/
+  registerInterface(&effort_joint_interface_);
+
 
   feedback_sub_ = nh_.subscribe("feedback", 1, &JackalHardware::feedbackCallback, this);
 
@@ -99,9 +106,10 @@ void JackalHardware::publishDriveFromController()
 {
   if (cmd_drive_pub_.trylock())
   {
-    cmd_drive_pub_.msg_.mode = jackal_msgs::Drive::MODE_VELOCITY;
-    cmd_drive_pub_.msg_.drivers[jackal_msgs::Drive::LEFT] = joints_[0].velocity_command;
-    cmd_drive_pub_.msg_.drivers[jackal_msgs::Drive::RIGHT] = joints_[1].velocity_command;
+
+    cmd_drive_pub_.msg_.mode = jackal_msgs::Drive::MODE_EFFORT;
+    cmd_drive_pub_.msg_.drivers[jackal_msgs::Drive::LEFT] = 4.0; // Units: (Nm)
+    cmd_drive_pub_.msg_.drivers[jackal_msgs::Drive::RIGHT] = 4.0; // Units: (Nm)
     cmd_drive_pub_.unlockAndPublish();
   }
 }
