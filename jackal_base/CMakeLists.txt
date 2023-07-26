@@ -18,13 +18,14 @@ add_executable(jackal_node
 target_link_libraries(jackal_node ${catkin_LIBRARIES} ${Boost_LIBRARIES})
 add_dependencies(jackal_node jackal_msgs_gencpp rosserial_msgs_gencpp)
 
-add_executable(${PROJECT_NAME}_simple_joy_node src/simple_joy_node.cpp)
-target_link_libraries(${PROJECT_NAME}_simple_joy_node ${catkin_LIBRARIES})
-set_target_properties(${PROJECT_NAME}_simple_joy_node
-  PROPERTIES OUTPUT_NAME simple_joy_node PREFIX "")
-add_dependencies(${PROJECT_NAME}_simple_joy_node jackal_msgs_gencpp)
+add_executable(jackal_teleop_joy_pwm src/simple_joy_node.cpp)
+target_link_libraries(jackal_teleop_joy_pwm ${catkin_LIBRARIES})
 
-install(TARGETS jackal_node ${PROJECT_NAME}_simple_joy_node
+# set_target_properties(jackal_teleop_joy_pwm
+# PROPERTIES OUTPUT_NAME simple_joy_node PREFIX "")
+add_dependencies(jackal_teleop_joy_pwm jackal_msgs_gencpp rosserial_msgs_gencpp)
+
+install(TARGETS jackal_node jackal_teleop_joy_pwm
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION})
 
 install(DIRECTORY launch config
@@ -41,6 +42,9 @@ endif()
 install(PROGRAMS scripts/compute_calibration
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION})
 
+
+
 roslaunch_add_file_check(launch/base.launch)
+roslaunch_add_file_check(launch/simple_joy.launch)
 roslint_cpp()
 roslint_add_test()

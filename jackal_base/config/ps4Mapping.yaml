@@ -1,0 +1,26 @@
+
+lx: 0
+ly: 1
+rx: 3
+ry: 4
+
+l2_analog: 2
+r2_analog: 5
+
+l_stick_btn: 9
+r_stick_btn: 10
+
+x: 0
+circle: 1
+square: 2
+triangle: 3
+d_up: 13
+d_down: 14
+d_left: 11
+d_right: 12
+l1: 4
+r1: 5
+
+share: 6
+options: 7
+ 

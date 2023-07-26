@@ -59,13 +59,12 @@ JackalHardware::JackalHardware()
         joint_state_handle, &joints_[i].velocity_command);
     effort_joint_interface_.registerHandle(joint_handle);
   }
-  registerInterface(&joint_state_interface_);
+  // registerInterface(&joint_state_interface_);
   /*registerInterface(&velocity_joint_interface_);*/
-  registerInterface(&effort_joint_interface_);
+  // registerInterface(&effort_joint_interface_);
 
 
   feedback_sub_ = nh_.subscribe("feedback", 1, &JackalHardware::feedbackCallback, this);
-
   // Realtime publisher, initializes differently from regular ros::Publisher
   cmd_drive_pub_.init(nh_, "cmd_drive", 1);
 }
@@ -106,10 +105,9 @@ void JackalHardware::publishDriveFromController()
 {
   if (cmd_drive_pub_.trylock())
   {
-
-    cmd_drive_pub_.msg_.mode = jackal_msgs::Drive::MODE_EFFORT;
-    cmd_drive_pub_.msg_.drivers[jackal_msgs::Drive::LEFT] = 4.0; // Units: (Nm)
-    cmd_drive_pub_.msg_.drivers[jackal_msgs::Drive::RIGHT] = 4.0; // Units: (Nm)
+    cmd_drive_pub_.msg_.mode = jackal_msgs::Drive::MODE_PWM;
+    cmd_drive_pub_.msg_.drivers[jackal_msgs::Drive::LEFT] = .1;
+    cmd_drive_pub_.msg_.drivers[jackal_msgs::Drive::RIGHT] = -.1;
     cmd_drive_pub_.unlockAndPublish();
   }
 }
@@ -120,6 +118,7 @@ void JackalHardware::feedbackCallback(const jackal_msgs::Feedback::ConstPtr& msg
   // until the control thread is not using the lock.
   boost::mutex::scoped_lock lock(feedback_msg_mutex_);
   feedback_msg_ = msg;
+  
 }
 
 }  // namespace jackal_base

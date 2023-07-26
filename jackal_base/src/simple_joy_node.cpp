@@ -25,9 +25,16 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSI
 
 #include "ros/ros.h"
 #include "jackal_msgs/Drive.h"
+#include "jackal_msgs/Feedback.h"
+#include "jackal_msgs/PWMControl.h"
 #include "sensor_msgs/Joy.h"
-
+#include <boost/asio/io_service.hpp>
+#include <boost/thread.hpp>
+#include <boost/chrono.hpp>
+#include <string>
+#include <rosserial_server/serial_session.h>
 #include "boost/algorithm/clamp.hpp"
+#include "realtime_tools/realtime_publisher.h"
 
 namespace jackal_teleop
 {
@@ -36,72 +43,168 @@ class SimpleJoy
 {
 public:
   explicit SimpleJoy(ros::NodeHandle* nh);
+  void controlThread(ros::Rate rate);
 
 private:
   void joyCallback(const sensor_msgs::Joy::ConstPtr& joy);
+  void feedbackCallback(const jackal_msgs::Feedback::ConstPtr& msg);
+  
 
   ros::NodeHandle* nh_;
   ros::Subscriber joy_sub_;
-  ros::Publisher drive_pub_;
+  ros::Subscriber feedback_sub_;
+  ros::Publisher control_pub_;
+  realtime_tools::RealtimePublisher<jackal_msgs::Drive> drive_pub_;
 
   int deadman_button_;
   int axis_linear_;
+  int axis_linear_2;
   int axis_angular_;
   float scale_linear_;
   float scale_angular_;
 
   bool sent_deadman_msg_;
+  bool controller_alive;
+  bool feedback_alive;
+  long feedback_msg_cnt;
+  bool torque_control_;
+  sensor_msgs::Joy::ConstPtr controller;
+  jackal_msgs::Feedback::ConstPtr feedback;
+  // boost::mutex joy_msg_mutex_;
+
 };
 
 SimpleJoy::SimpleJoy(ros::NodeHandle* nh) : nh_(nh)
 {
-  joy_sub_ = nh_->subscribe<sensor_msgs::Joy>("joy", 1, &SimpleJoy::joyCallback, this);
-  drive_pub_ = nh_->advertise<jackal_msgs::Drive>("cmd_drive", 1, true);
-
-  ros::param::param("~deadman_button", deadman_button_, 0);
-  ros::param::param("~axis_linear", axis_linear_, 1);
-  ros::param::param("~axis_angular", axis_angular_, 0);
-  ros::param::param("~scale_linear", scale_linear_, 1.0f);
-  ros::param::param("~scale_angular", scale_angular_, 1.0f);
-
-  sent_deadman_msg_ = false;
+  joy_sub_ = nh_->subscribe<sensor_msgs::Joy>("/bluetooth_teleop/joy", 1, &SimpleJoy::joyCallback, this);
+  feedback_sub_ = nh_->subscribe<jackal_msgs::Feedback>("/feedback", 1, &SimpleJoy::feedbackCallback, this);
+  control_pub_ = nh_->advertise<jackal_msgs::PWMControl>("/control_msg", 1, true);
+  // drive_pub_ = nh_->advertise<jackal_msgs::Drive>("cmd_drive", 1, true);
+  
+  
+  ros::param::param("/bluetooth_teleop/l1", deadman_button_, 0);
+  ros::param::param("/bluetooth_teleop/ly", axis_linear_, 1);
+  ros::param::param("/bluetooth_teleop/rx", axis_angular_, 0);
+  ros::param::param("/bluetooth_teleop/ry", axis_linear_2, 0);
+  ros::param::param("~scale_linear", scale_linear_, 0.5f);
+  ros::param::param("~scale_angular", scale_angular_, 0.5f);
+  ros::param::param("~do_torque_control", torque_control_, false);
+  if(!torque_control_){
+    drive_pub_.init(*nh_, "cmd_drive", 1);
+  }else{
+    drive_pub_.init(*nh_, "torque_setpoint", 1);
+  }
+  controller_alive = false;
+  feedback_alive = false;
+  feedback_msg_cnt = 0;
+  // joy_msg_mutex_.lock();
+  
 }
 
 void SimpleJoy::joyCallback(const sensor_msgs::Joy::ConstPtr& joy_msg)
 {
-  jackal_msgs::Drive drive_msg;
-
-  if (joy_msg->buttons[deadman_button_])
-  {
-    drive_msg.mode = jackal_msgs::Drive::MODE_PWM;
-    float linear = joy_msg->axes[axis_linear_] * scale_linear_;
-    float angular = joy_msg->axes[axis_angular_] * scale_angular_;
-    drive_msg.drivers[jackal_msgs::Drive::LEFT] = boost::algorithm::clamp(linear - angular, -1.0, 1.0);
-    drive_msg.drivers[jackal_msgs::Drive::RIGHT] = boost::algorithm::clamp(linear + angular, -1.0, 1.0);
-    drive_pub_.publish(drive_msg);
-    sent_deadman_msg_ = false;
+  controller = joy_msg;
+  if(!controller_alive){
+    controller_alive = true;
+    // joy_msg_mutex_.unlock();
   }
-  else
-  {
-    // When deadman button is released, immediately send a single no-motion command
-    // in order to stop the robot.
-    if (!sent_deadman_msg_)
-    {
-      drive_msg.mode = jackal_msgs::Drive::MODE_NONE;
-      drive_pub_.publish(drive_msg);
-      sent_deadman_msg_ = true;
+  // boost::mutex::scoped_lock lock(joy_msg_mutex_);
+  
+}
+
+
+void SimpleJoy::feedbackCallback(const jackal_msgs::Feedback::ConstPtr& msg){
+  if(!feedback_alive){
+    feedback_alive = true;
+  }
+  feedback = msg;
+  feedback_msg_cnt++;
+}
+
+
+  // namespace jackal_teleop
+  
+
+  void SimpleJoy::controlThread(ros::Rate rate){
+    jackal_msgs::PWMControl pwm_control_msg;
+    while(1){
+      
+      if (controller_alive && feedback_alive && drive_pub_.trylock()){
+        pwm_control_msg.left_current = feedback->drivers[0].current;
+        pwm_control_msg.right_current = feedback->drivers[1].current;
+
+        pwm_control_msg.left_measured_velocity = feedback->drivers[0].measured_velocity;
+        pwm_control_msg.right_measured_velocity = feedback->drivers[1].measured_velocity;
+
+        pwm_control_msg.left_measured_travel = feedback->drivers[0].measured_travel;
+        pwm_control_msg.right_measured_travel = feedback->drivers[1].measured_travel;
+        
+        pwm_control_msg.left_motor_temperature = feedback->drivers[0].motor_temperature;
+        pwm_control_msg.right_motor_temperature = feedback->drivers[1].motor_temperature;
+        pwm_control_msg.commanded_mode = feedback->commanded_mode;
+        pwm_control_msg.feedback_header = feedback->header;
+        pwm_control_msg.feedback_msg_cnt = feedback_msg_cnt;
+        
+        if (controller->buttons[deadman_button_]){
+          drive_pub_.msg_.mode = jackal_msgs::Drive::MODE_PWM;
+          if(!torque_control_){
+            float linear = controller->axes[axis_linear_] * scale_linear_;
+            float angular = controller->axes[axis_angular_] * scale_angular_;
+            float left_pwm = boost::algorithm::clamp(linear - angular, -1.0, 1.0);
+            float right_pwm = boost::algorithm::clamp(linear + angular, -1.0, 1.0);
+
+            drive_pub_.msg_.drivers[jackal_msgs::Drive::LEFT] = left_pwm;
+            drive_pub_.msg_.drivers[jackal_msgs::Drive::RIGHT] = right_pwm;
+            pwm_control_msg.left_pwm = left_pwm;
+            pwm_control_msg.right_pwm = right_pwm;
+          }else{
+            float linear = controller->axes[axis_linear_];
+            float linear2 = controller->axes[axis_linear_2];
+            float left_torque = boost::algorithm::clamp(linear, -1.0, 1.0);
+            float right_torque = boost::algorithm::clamp(linear2, -1.0, 1.0);
+
+            drive_pub_.msg_.drivers[jackal_msgs::Drive::LEFT] = left_torque;
+            drive_pub_.msg_.drivers[jackal_msgs::Drive::RIGHT] = right_torque;
+            pwm_control_msg.left_pwm = left_torque;
+            pwm_control_msg.right_pwm = right_torque;
+          }
+
+        }
+        else{
+          // When deadman button is released, immediately send a single no-motion command
+          // in order to stop the robot.
+          // if (!sent_deadman_msg_)
+          // {
+            drive_pub_.msg_.mode = jackal_msgs::Drive::MODE_NONE;
+            // sent_deadman_msg_ = true;
+          // }
+        }
+        control_pub_.publish(pwm_control_msg);
+        drive_pub_.unlockAndPublish();
+      }
+
+    rate.sleep();
     }
   }
 }
 
-}  // namespace jackal_teleop
+
 
 int main(int argc, char *argv[])
 {
   ros::init(argc, argv, "jackal_teleop_joy_pwm");
+  
+  std::string port;
+  ros::param::param<std::string>("~port", port, "/dev/jackal");
+  boost::asio::io_service io_service;
+  new rosserial_server::SerialSession(io_service, port, 115200);
+  boost::thread(boost::bind(&boost::asio::io_service::run, &io_service));
+
+  
 
   ros::NodeHandle nh;
   jackal_teleop::SimpleJoy simple_joy(&nh);
 
+  boost::thread(boost::bind(&jackal_teleop::SimpleJoy::controlThread, &simple_joy, ros::Rate(50)));
   ros::spin();
 }
