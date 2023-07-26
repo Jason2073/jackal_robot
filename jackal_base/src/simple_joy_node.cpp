@@ -58,16 +58,20 @@ private:
 
   int deadman_button_;
   int axis_linear_;
-  int axis_linear_2;
   int axis_angular_;
   float scale_linear_;
   float scale_angular_;
+  int axis_throttle_;
+  int axis_turn_;
 
   bool sent_deadman_msg_;
   bool controller_alive;
   bool feedback_alive;
+  int reverse_button_;
   long feedback_msg_cnt;
   bool torque_control_;
+  bool invert;
+  bool pressed_invert;
   sensor_msgs::Joy::ConstPtr controller;
   jackal_msgs::Feedback::ConstPtr feedback;
   // boost::mutex joy_msg_mutex_;
@@ -85,7 +89,9 @@ SimpleJoy::SimpleJoy(ros::NodeHandle* nh) : nh_(nh)
   ros::param::param("/bluetooth_teleop/l1", deadman_button_, 0);
   ros::param::param("/bluetooth_teleop/ly", axis_linear_, 1);
   ros::param::param("/bluetooth_teleop/rx", axis_angular_, 0);
-  ros::param::param("/bluetooth_teleop/ry", axis_linear_2, 0);
+  ros::param::param("/bluetooth_teleop/r2_analog", axis_throttle_, 5);
+  ros::param::param("/bluetooth_teleop/r1", reverse_button_, 5);
+  ros::param::param("/bluetooth_teleop/lx", axis_turn_, 0);
   ros::param::param("~scale_linear", scale_linear_, 0.5f);
   ros::param::param("~scale_angular", scale_angular_, 0.5f);
   ros::param::param("~do_torque_control", torque_control_, false);
@@ -97,6 +103,8 @@ SimpleJoy::SimpleJoy(ros::NodeHandle* nh) : nh_(nh)
   controller_alive = false;
   feedback_alive = false;
   feedback_msg_cnt = 0;
+  invert=false;
+  pressed_invert = false;
   // joy_msg_mutex_.lock();
   
 }
@@ -158,10 +166,20 @@ void SimpleJoy::feedbackCallback(const jackal_msgs::Feedback::ConstPtr& msg){
             pwm_control_msg.left_pwm = left_pwm;
             pwm_control_msg.right_pwm = right_pwm;
           }else{
-            float linear = controller->axes[axis_linear_];
-            float linear2 = controller->axes[axis_linear_2];
-            float left_torque = boost::algorithm::clamp(linear, -1.0, 1.0);
-            float right_torque = boost::algorithm::clamp(linear2, -1.0, 1.0);
+            
+            if(controller->buttons[reverse_button_] && !pressed_invert){
+              invert = !invert;
+              pressed_invert = true;
+            }else if (!controller->buttons[reverse_button_] && pressed_invert){
+              pressed_invert = false;
+            }
+            float throttle = -(controller->axes[axis_throttle_]-1);
+            if(invert){
+              throttle *= -1;
+            }
+            float turn = controller->axes[axis_turn_]*2;
+            float left_torque = boost::algorithm::clamp(throttle-turn, -1.0, 1.0);
+            float right_torque = boost::algorithm::clamp(throttle+turn, -1.0, 1.0);
 
             drive_pub_.msg_.drivers[jackal_msgs::Drive::LEFT] = left_torque;
             drive_pub_.msg_.drivers[jackal_msgs::Drive::RIGHT] = right_torque;
