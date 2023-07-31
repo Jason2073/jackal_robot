@@ -43,7 +43,7 @@ class SimpleJoy
 {
 public:
   explicit SimpleJoy(ros::NodeHandle* nh);
-  void controlThread(ros::Rate rate);
+  void controlThread(/*ros::Rate rate*/);
 
 private:
   void joyCallback(const sensor_msgs::Joy::ConstPtr& joy);
@@ -127,15 +127,16 @@ void SimpleJoy::feedbackCallback(const jackal_msgs::Feedback::ConstPtr& msg){
   }
   feedback = msg;
   feedback_msg_cnt++;
+  controlThread();
 }
 
 
   // namespace jackal_teleop
   
 
-  void SimpleJoy::controlThread(ros::Rate rate){
+  void SimpleJoy::controlThread(/*ros::Rate rate*/){
     jackal_msgs::PWMControl pwm_control_msg;
-    while(1){
+    // while(1){
       
       if (controller_alive && feedback_alive && drive_pub_.trylock()){
         pwm_control_msg.left_current = feedback->drivers[0].current;
@@ -154,8 +155,8 @@ void SimpleJoy::feedbackCallback(const jackal_msgs::Feedback::ConstPtr& msg){
         pwm_control_msg.feedback_msg_cnt = feedback_msg_cnt;
         
         if (controller->buttons[deadman_button_]){
-          drive_pub_.msg_.mode = jackal_msgs::Drive::MODE_PWM;
           if(!torque_control_){
+            drive_pub_.msg_.mode = jackal_msgs::Drive::MODE_PWM;
             float linear = controller->axes[axis_linear_] * scale_linear_;
             float angular = controller->axes[axis_angular_] * scale_angular_;
             float left_pwm = boost::algorithm::clamp(linear - angular, -1.0, 1.0);
@@ -166,20 +167,22 @@ void SimpleJoy::feedbackCallback(const jackal_msgs::Feedback::ConstPtr& msg){
             pwm_control_msg.left_pwm = left_pwm;
             pwm_control_msg.right_pwm = right_pwm;
           }else{
-            
+            float torque_scale = 0.025;
+            drive_pub_.msg_.mode = jackal_msgs::Drive::MODE_VELOCITY;
             if(controller->buttons[reverse_button_] && !pressed_invert){
               invert = !invert;
               pressed_invert = true;
             }else if (!controller->buttons[reverse_button_] && pressed_invert){
               pressed_invert = false;
             }
-            float throttle = -(controller->axes[axis_throttle_]-1);
+
+            float throttle = -torque_scale*(controller->axes[axis_throttle_]-1);
             if(invert){
               throttle *= -1;
             }
-            float turn = controller->axes[axis_turn_]*2;
-            float left_torque = boost::algorithm::clamp(throttle-turn, -1.0, 1.0);
-            float right_torque = boost::algorithm::clamp(throttle+turn, -1.0, 1.0);
+            float turn = controller->axes[axis_turn_]*torque_scale;
+            float left_torque = boost::algorithm::clamp(throttle-turn, -torque_scale, torque_scale);
+            float right_torque = boost::algorithm::clamp(throttle+turn, -torque_scale, torque_scale);
 
             drive_pub_.msg_.drivers[jackal_msgs::Drive::LEFT] = left_torque;
             drive_pub_.msg_.drivers[jackal_msgs::Drive::RIGHT] = right_torque;
@@ -201,8 +204,8 @@ void SimpleJoy::feedbackCallback(const jackal_msgs::Feedback::ConstPtr& msg){
         drive_pub_.unlockAndPublish();
       }
 
-    rate.sleep();
-    }
+    // rate.sleep();
+    // }
   }
 }
 
@@ -223,6 +226,6 @@ int main(int argc, char *argv[])
   ros::NodeHandle nh;
   jackal_teleop::SimpleJoy simple_joy(&nh);
 
-  boost::thread(boost::bind(&jackal_teleop::SimpleJoy::controlThread, &simple_joy, ros::Rate(50)));
+  // boost::thread(boost::bind(&jackal_teleop::SimpleJoy::controlThread, &simple_joy, ros::Rate(50)));
   ros::spin();
 }
