@@ -88,7 +88,7 @@ SimpleJoy::SimpleJoy(ros::NodeHandle* nh) : nh_(nh)
   if(mode == 0){
     drive_pub_.init(*nh_, "cmd_drive", 1);
   }else{
-    drive_pub_.init(*nh_, "torque_setpoint", 1);
+    drive_pub_.init(*nh_, "ctrl_setpoint", 1);
   }
   controller_alive = false;
   invert=false;
