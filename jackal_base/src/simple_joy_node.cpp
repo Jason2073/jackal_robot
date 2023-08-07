@@ -50,6 +50,7 @@ private:
   ros::NodeHandle* nh_;
   ros::Subscriber joy_sub_;
   ros::Publisher control_pub_;
+  ros::Publisher erl_pub_;
   realtime_tools::RealtimePublisher<jackal_msgs::Drive> drive_pub_;
 
   int deadman_button_;
@@ -63,7 +64,7 @@ private:
   bool sent_deadman_msg_;
   bool controller_alive;
   int reverse_button_;
-  bool torque_control_;
+  int mode; // 0 = basic pwm, 1 = torque, 2 = vel
   bool invert;
   bool pressed_invert;
   sensor_msgs::Joy::ConstPtr controller;
@@ -83,8 +84,8 @@ SimpleJoy::SimpleJoy(ros::NodeHandle* nh) : nh_(nh)
   ros::param::param("/bluetooth_teleop/lx", axis_turn_, 0);
   ros::param::param("~scale_linear", scale_linear_, 0.5f);
   ros::param::param("~scale_angular", scale_angular_, 0.5f);
-  ros::param::param("~do_torque_control", torque_control_, false);
-  if(!torque_control_){
+  ros::param::param("~control_mode", mode, 0);
+  if(mode == 0){
     drive_pub_.init(*nh_, "cmd_drive", 1);
   }else{
     drive_pub_.init(*nh_, "torque_setpoint", 1);
@@ -113,9 +114,8 @@ void SimpleJoy::joyCallback(const sensor_msgs::Joy::ConstPtr& joy_msg)
       if (controller_alive && drive_pub_.trylock()){
         
         if (controller->buttons[deadman_button_]){
-          if(!torque_control_){
+          if(mode == 0){
             // drive_pub_.msg_.mode = jackal_msgs::Drive::MODE_PWM;
-
             float linear = controller->axes[axis_linear_] * scale_linear_;
             float angular = controller->axes[axis_angular_] * scale_angular_;
             float left_pwm = boost::algorithm::clamp(linear - angular, -1.0, 1.0);
@@ -127,7 +127,7 @@ void SimpleJoy::joyCallback(const sensor_msgs::Joy::ConstPtr& joy_msg)
 
             drive_pub_.msg_.drivers[jackal_msgs::Drive::LEFT] = left_pwm;
             drive_pub_.msg_.drivers[jackal_msgs::Drive::RIGHT] = right_pwm;
-          }else{
+          }else if( mode == 1){
             float torque_scale = 0.025;
             drive_pub_.msg_.mode = jackal_msgs::Drive::MODE_VELOCITY;
 
@@ -139,6 +139,16 @@ void SimpleJoy::joyCallback(const sensor_msgs::Joy::ConstPtr& joy_msg)
 
             drive_pub_.msg_.drivers[jackal_msgs::Drive::LEFT] = left_torque;
             drive_pub_.msg_.drivers[jackal_msgs::Drive::RIGHT] = right_torque;
+          }else{
+            drive_pub_.msg_.mode = jackal_msgs::Drive::MODE_VELOCITY;
+            float throttle = (controller->axes[axis_linear_]);
+            float turn = controller->axes[axis_angular_];
+            float vel_scale = 20;
+            float left_vel = boost::algorithm::clamp(vel_scale*(throttle-turn), -vel_scale, vel_scale);
+            float right_vel = boost::algorithm::clamp(vel_scale*(throttle+turn), -vel_scale, vel_scale);
+
+            drive_pub_.msg_.drivers[jackal_msgs::Drive::LEFT] = left_vel;
+            drive_pub_.msg_.drivers[jackal_msgs::Drive::RIGHT] = right_vel;
           }
 
         }
