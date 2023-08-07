@@ -61,13 +61,12 @@ private:
   float scale_angular_;
   int axis_throttle_;
   int axis_turn_;
+  int const_turn_btn;
+  bool started_const_turn;
 
   bool sent_deadman_msg_;
   bool controller_alive;
-  int reverse_button_;
   int mode; // 0 = basic pwm, 1 = torque, 2 = vel
-  bool invert;
-  bool pressed_invert;
   sensor_msgs::Joy::ConstPtr controller;
 
 };
@@ -77,9 +76,9 @@ SimpleJoy::SimpleJoy(ros::NodeHandle* nh) : nh_(nh)
   ros::param::param("/bluetooth_teleop/l1", deadman_button_, 0);
   ros::param::param("/bluetooth_teleop/ly", axis_linear_, 1);
   ros::param::param("/bluetooth_teleop/rx", axis_angular_, 0);
-  ros::param::param("/bluetooth_teleop/ry", axis_throttle_, 5);
-  ros::param::param("/bluetooth_teleop/r1", reverse_button_, 5);
-  ros::param::param("/bluetooth_teleop/lx", axis_turn_, 0);
+
+  ros::param::param("/bluetooth_teleop/circle", const_turn_btn, 1);
+
   ros::param::param("~scale_linear", scale_linear_, 0.5f);
   ros::param::param("~scale_angular", scale_angular_, 0.5f);
   ros::param::param("~control_mode", mode, 0);
@@ -92,8 +91,7 @@ SimpleJoy::SimpleJoy(ros::NodeHandle* nh) : nh_(nh)
   
   joy_sub_ = nh_->subscribe<sensor_msgs::Joy>("/bluetooth_teleop/joy", 1, &SimpleJoy::joyCallback, this);
   controller_alive = false;
-  invert=false;
-  pressed_invert = false;
+  started_const_turn = false;
   
 }
 
@@ -115,7 +113,7 @@ void SimpleJoy::joyCallback(const sensor_msgs::Joy::ConstPtr& joy_msg)
       if (controller_alive && drive_pub_.trylock()){
         
         if (controller->buttons[deadman_button_]){
-          if(mode == 0){
+          if(mode == 0){ // do basic control
             // drive_pub_.msg_.mode = jackal_msgs::Drive::MODE_PWM;
             float linear = controller->axes[axis_linear_] * scale_linear_;
             float angular = controller->axes[axis_angular_] * scale_angular_;
@@ -128,7 +126,7 @@ void SimpleJoy::joyCallback(const sensor_msgs::Joy::ConstPtr& joy_msg)
 
             drive_pub_.msg_.drivers[jackal_msgs::Drive::LEFT] = left_pwm;
             drive_pub_.msg_.drivers[jackal_msgs::Drive::RIGHT] = right_pwm;
-          }else if( mode == 1){
+          }else if(mode == 1){ //do torque control
             float torque_scale = 0.025;
             drive_pub_.msg_.mode = jackal_msgs::Drive::MODE_VELOCITY;
 
@@ -140,13 +138,28 @@ void SimpleJoy::joyCallback(const sensor_msgs::Joy::ConstPtr& joy_msg)
 
             drive_pub_.msg_.drivers[jackal_msgs::Drive::LEFT] = left_torque;
             drive_pub_.msg_.drivers[jackal_msgs::Drive::RIGHT] = right_torque;
-          }else{
+          }else{ // do velocity control + constant radius turning
             drive_pub_.msg_.mode = jackal_msgs::Drive::MODE_VELOCITY;
-            float throttle = (controller->axes[axis_linear_]);
-            float turn = controller->axes[axis_angular_];
-            float vel_scale = 20;
-            float left_vel = boost::algorithm::clamp(vel_scale*(throttle-turn), -vel_scale, vel_scale);
-            float right_vel = boost::algorithm::clamp(vel_scale*(throttle+turn), -vel_scale, vel_scale);
+            float turn_ratio = 0;
+            float left_vel = 0;
+            float right_vel = 0;
+            if(!started_const_turn && controller->buttons[const_turn_btn]){
+              started_const_turn = true;
+              turn_ratio = controller->axes[axis_linear_];
+            }else if (started_const_turn && controller->buttons[const_turn_btn]){
+              float speed = 12;
+              left_vel = (turn_ratio + 1)*speed;
+              right_vel = (1-turn_ratio)*speed;
+              left_vel = boost::algorithm::clamp(left_vel, -speed, speed); 
+              right_vel = boost::algorithm::clamp(right_vel, -speed, speed);
+            }else{
+              started_const_turn = false;
+              float throttle = (controller->axes[axis_linear_]) * scale_linear_;
+              float turn = controller->axes[axis_angular_] * scale_angular_;
+              float vel_scale = 20;
+              left_vel = boost::algorithm::clamp(vel_scale*(throttle-turn), -vel_scale, vel_scale);
+              right_vel = boost::algorithm::clamp(vel_scale*(throttle+turn), -vel_scale, vel_scale);
+            }
 
             drive_pub_.msg_.drivers[jackal_msgs::Drive::LEFT] = left_vel;
             drive_pub_.msg_.drivers[jackal_msgs::Drive::RIGHT] = right_vel;
