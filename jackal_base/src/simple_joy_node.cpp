@@ -26,6 +26,7 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSI
 #include "ros/ros.h"
 #include "jackal_msgs/Drive.h"
 #include "sensor_msgs/Joy.h"
+#include <ros/console.h>
 #include <boost/asio/io_service.hpp>
 #include <boost/thread.hpp>
 #include <boost/chrono.hpp>
@@ -73,9 +74,6 @@ private:
 
 SimpleJoy::SimpleJoy(ros::NodeHandle* nh) : nh_(nh)
 {
-  joy_sub_ = nh_->subscribe<sensor_msgs::Joy>("/bluetooth_teleop/joy", 1, &SimpleJoy::joyCallback, this);
-  
-  
   ros::param::param("/bluetooth_teleop/l1", deadman_button_, 0);
   ros::param::param("/bluetooth_teleop/ly", axis_linear_, 1);
   ros::param::param("/bluetooth_teleop/rx", axis_angular_, 0);
@@ -85,11 +83,14 @@ SimpleJoy::SimpleJoy(ros::NodeHandle* nh) : nh_(nh)
   ros::param::param("~scale_linear", scale_linear_, 0.5f);
   ros::param::param("~scale_angular", scale_angular_, 0.5f);
   ros::param::param("~control_mode", mode, 0);
+  // ROS_ERROR("Starting Joystick control with control_mode: %d", mode);
   if(mode == 0){
     drive_pub_.init(*nh_, "cmd_drive", 1);
   }else{
     drive_pub_.init(*nh_, "ctrl_setpoint", 1);
   }
+  
+  joy_sub_ = nh_->subscribe<sensor_msgs::Joy>("/bluetooth_teleop/joy", 1, &SimpleJoy::joyCallback, this);
   controller_alive = false;
   invert=false;
   pressed_invert = false;
@@ -167,11 +168,11 @@ int main(int argc, char *argv[])
 {
   ros::init(argc, argv, "jackal_teleop_joy_pwm");
   
-  std::string port;
-  ros::param::param<std::string>("~port", port, "/dev/jackal");
-  boost::asio::io_service io_service;
-  new rosserial_server::SerialSession(io_service, port, 115200);
-  boost::thread(boost::bind(&boost::asio::io_service::run, &io_service));
+  // std::string port;
+  // ros::param::param<std::string>("~port", port, "/dev/jackal");
+  // boost::asio::io_service io_service;
+  // new rosserial_server::SerialSession(io_service, port, 115200);
+  // boost::thread(boost::bind(&boost::asio::io_service::run, &io_service));
 
   
 

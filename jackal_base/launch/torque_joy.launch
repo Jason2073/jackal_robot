@@ -16,7 +16,7 @@
           - wifi_connected
     </rosparam>
     <param name="port" value="$(arg jackal_port)" />
-    <param name="control_mode" value=1/>
+    <param name="control_mode" value="1"/>
     <param name="wireless_interface" value="$(optenv JACKAL_WIRELESS_INTERFACE wlp2s0)" />
   </node>
 
@@ -27,6 +27,9 @@
   <node pkg="nmea_navsat_driver" type="nmea_topic_driver" name="nmea_topic_driver" ns="navsat" />
 
   <include file="$(find jackal_torque_control)/launch/control.launch" />
+
+  <include file="$(find vicon_bridge)/launch/erl_vicon.launch" />
+
   <!-- Filter raw gyro data into a usable IMU message -->
   <node pkg="imu_filter_madgwick" type="imu_filter_node" name="imu_filter">
     <rosparam file="$(eval optenv('JACKAL_MAG_CONFIG', find('jackal_base')+'/config/mag_config_default.yaml'))" />
