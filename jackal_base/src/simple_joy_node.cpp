@@ -181,11 +181,11 @@ int main(int argc, char *argv[])
 {
   ros::init(argc, argv, "jackal_teleop_joy_pwm");
   
-  // std::string port;
-  // ros::param::param<std::string>("~port", port, "/dev/jackal");
-  // boost::asio::io_service io_service;
-  // new rosserial_server::SerialSession(io_service, port, 115200);
-  // boost::thread(boost::bind(&boost::asio::io_service::run, &io_service));
+  std::string port;
+  ros::param::param<std::string>("~port", port, "/dev/jackal");
+  boost::asio::io_service io_service;
+  new rosserial_server::SerialSession(io_service, port, 115200);
+  boost::thread(boost::bind(&boost::asio::io_service::run, &io_service));
 
   
 
