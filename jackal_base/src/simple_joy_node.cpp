@@ -63,6 +63,8 @@ private:
   int axis_turn_;
   int const_turn_btn;
   bool started_const_turn;
+  float last_left;
+  float last_right;
 
   bool sent_deadman_msg_;
   bool controller_alive;
@@ -92,6 +94,8 @@ SimpleJoy::SimpleJoy(ros::NodeHandle* nh) : nh_(nh)
   joy_sub_ = nh_->subscribe<sensor_msgs::Joy>("/bluetooth_teleop/joy", 1, &SimpleJoy::joyCallback, this);
   controller_alive = false;
   started_const_turn = false;
+  last_left = 0;
+  last_right = 0;
   
 }
 
@@ -148,17 +152,32 @@ void SimpleJoy::joyCallback(const sensor_msgs::Joy::ConstPtr& joy_msg)
               turn_ratio = controller->axes[axis_linear_];
             }else if (started_const_turn && controller->buttons[const_turn_btn]){
               float speed = 12;
-              left_vel = (turn_ratio + 1)*speed;
-              right_vel = (1-turn_ratio)*speed;
+              left_vel = (turn_ratio + 1) * speed;
+              right_vel = (1-turn_ratio) * speed;
               left_vel = boost::algorithm::clamp(left_vel, -speed, speed); 
               right_vel = boost::algorithm::clamp(right_vel, -speed, speed);
             }else{
               started_const_turn = false;
+              float max_change = 0.5;
               float throttle = (controller->axes[axis_linear_]) * scale_linear_;
               float turn = controller->axes[axis_angular_] * scale_angular_;
               float vel_scale = 20;
               left_vel = boost::algorithm::clamp(vel_scale*(throttle-turn), -vel_scale, vel_scale);
               right_vel = boost::algorithm::clamp(vel_scale*(throttle+turn), -vel_scale, vel_scale);
+              
+              left_vel = boost::algorithm::clamp(left_vel, last_left-max_change, last_left+max_change);
+              right_vel = boost::algorithm::clamp(right_vel, last_right-max_change, last_right+max_change);
+              
+              if(left_vel < 0.1 && left_vel > -0.1){
+                left_vel = 0.1;
+              }
+
+              if(right_vel < 0.1 && right_vel > -0.1){
+                right_vel = 0.1; 
+              }
+
+              last_left = left_vel;
+              last_right = right_vel;
             }
 
             drive_pub_.msg_.drivers[jackal_msgs::Drive::LEFT] = left_vel;
