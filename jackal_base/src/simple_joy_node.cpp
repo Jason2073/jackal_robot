@@ -31,6 +31,7 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSI
 #include <boost/thread.hpp>
 #include <boost/chrono.hpp>
 #include <string>
+#include "std_msgs/Bool.h"
 #include <rosserial_server/serial_session.h>
 #include "boost/algorithm/clamp.hpp"
 #include "realtime_tools/realtime_publisher.h"
@@ -51,7 +52,7 @@ private:
   ros::NodeHandle* nh_;
   ros::Subscriber joy_sub_;
   ros::Publisher control_pub_;
-  ros::Publisher erl_pub_;
+  ros::Publisher do_control_pub_;
   realtime_tools::RealtimePublisher<jackal_msgs::Drive> drive_pub_;
 
   int deadman_button_;
@@ -61,8 +62,8 @@ private:
   float scale_angular_;
   int axis_throttle_;
   int axis_turn_;
-  int const_turn_btn;
-  bool started_const_turn;
+  int energy_based_btn;
+  bool started_energy_based;
   float last_left;
   float last_right;
 
@@ -79,7 +80,7 @@ SimpleJoy::SimpleJoy(ros::NodeHandle* nh) : nh_(nh)
   ros::param::param("/bluetooth_teleop/ly", axis_linear_, 1);
   ros::param::param("/bluetooth_teleop/rx", axis_angular_, 0);
 
-  ros::param::param("/bluetooth_teleop/circle", const_turn_btn, 1);
+  ros::param::param("/bluetooth_teleop/circle", energy_based_btn, 1);
 
   ros::param::param("~scale_linear", scale_linear_, 0.5f);
   ros::param::param("~scale_angular", scale_angular_, 0.5f);
@@ -91,9 +92,10 @@ SimpleJoy::SimpleJoy(ros::NodeHandle* nh) : nh_(nh)
     drive_pub_.init(*nh_, "ctrl_setpoint", 1);
   }
   
+  do_control_pub_ = nh_->advertise<std_msgs::Bool>("/do_control", 1, true);
   joy_sub_ = nh_->subscribe<sensor_msgs::Joy>("/bluetooth_teleop/joy", 1, &SimpleJoy::joyCallback, this);
   controller_alive = false;
-  started_const_turn = false;
+  started_energy_based = false;
   last_left = 0;
   last_right = 0;
   
@@ -143,21 +145,27 @@ void SimpleJoy::joyCallback(const sensor_msgs::Joy::ConstPtr& joy_msg)
             drive_pub_.msg_.drivers[jackal_msgs::Drive::LEFT] = left_torque;
             drive_pub_.msg_.drivers[jackal_msgs::Drive::RIGHT] = right_torque;
           }else{ // do velocity control + constant radius turning
+            std_msgs::Bool do_control_msg;
+            do_control_msg.data = false;
+
             drive_pub_.msg_.mode = jackal_msgs::Drive::MODE_VELOCITY;
             float turn_ratio = 0;
             float left_vel = 0;
             float right_vel = 0;
-            if(!started_const_turn && controller->buttons[const_turn_btn]){
-              started_const_turn = true;
-              turn_ratio = controller->axes[axis_linear_];
-            }else if (started_const_turn && controller->buttons[const_turn_btn]){
-              float speed = 12;
-              left_vel = (turn_ratio + 1) * speed;
-              right_vel = (1-turn_ratio) * speed;
-              left_vel = boost::algorithm::clamp(left_vel, -speed, speed); 
-              right_vel = boost::algorithm::clamp(right_vel, -speed, speed);
+            if(!started_energy_based && controller->buttons[energy_based_btn]){
+              started_energy_based = true;
+              do_control_msg.data = true;
+              // turn_ratio = controller->axes[axis_linear_];
+            }else if (started_energy_based && controller->buttons[energy_based_btn]){
+              do_control_msg.data = true;
+              // float speed = 12;
+              // left_vel = (turn_ratio + 1) * speed;
+              // right_vel = (1-turn_ratio) * speed;
+              // left_vel = boost::algorithm::clamp(left_vel, -speed, speed); 
+              // right_vel = boost::algorithm::clamp(right_vel, -speed, speed);
+
             }else{
-              started_const_turn = false;
+              started_energy_based = false;
               float max_change = 0.5;
               float throttle = (controller->axes[axis_linear_]) * scale_linear_;
               float turn = controller->axes[axis_angular_] * scale_angular_;
@@ -182,13 +190,16 @@ void SimpleJoy::joyCallback(const sensor_msgs::Joy::ConstPtr& joy_msg)
 
             drive_pub_.msg_.drivers[jackal_msgs::Drive::LEFT] = left_vel;
             drive_pub_.msg_.drivers[jackal_msgs::Drive::RIGHT] = right_vel;
+            do_control_pub_.publish(do_control_msg);
           }
 
         }
         else{
             drive_pub_.msg_.mode = jackal_msgs::Drive::MODE_NONE;
         }
-        drive_pub_.unlockAndPublish();
+        if(!started_energy_based){
+          drive_pub_.unlockAndPublish();
+        }
       }
 
   }
@@ -205,8 +216,6 @@ int main(int argc, char *argv[])
   boost::asio::io_service io_service;
   new rosserial_server::SerialSession(io_service, port, 115200);
   boost::thread(boost::bind(&boost::asio::io_service::run, &io_service));
-
-  
 
   ros::NodeHandle nh;
   jackal_teleop::SimpleJoy simple_joy(&nh);
