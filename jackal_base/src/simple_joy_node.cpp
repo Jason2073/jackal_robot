@@ -86,7 +86,7 @@ SimpleJoy::SimpleJoy(ros::NodeHandle* nh) : nh_(nh)
   ros::param::param("~scale_angular", scale_angular_, 0.5f);
   ros::param::param("~control_mode", mode, 0);
   // ROS_ERROR("Starting Joystick control with control_mode: %d", mode);
-  if(mode == 0){
+  if(mode == 0 || mode == 3){
     drive_pub_.init(*nh_, "cmd_drive", 1);
   }else{
     drive_pub_.init(*nh_, "ctrl_setpoint", 1);
@@ -144,7 +144,7 @@ void SimpleJoy::joyCallback(const sensor_msgs::Joy::ConstPtr& joy_msg)
 
             drive_pub_.msg_.drivers[jackal_msgs::Drive::LEFT] = left_torque;
             drive_pub_.msg_.drivers[jackal_msgs::Drive::RIGHT] = right_torque;
-          }else{ // do velocity control + constant radius turning
+          }else{ // do velocity control + energy_based if running
             std_msgs::Bool do_control_msg;
             do_control_msg.data = false;
 
