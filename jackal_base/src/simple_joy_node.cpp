@@ -152,20 +152,14 @@ void SimpleJoy::joyCallback(const sensor_msgs::Joy::ConstPtr& joy_msg)
             float turn_ratio = 0;
             float left_vel = 0;
             float right_vel = 0;
-            if(!started_energy_based && controller->buttons[energy_based_btn]){
+            if(controller->buttons[energy_based_btn]){
+              //ROS_ERROR_STREAM("STARTING CONTROL MSG");
+              do_control_msg.data = true;
               started_energy_based = true;
-              do_control_msg.data = true;
               // turn_ratio = controller->axes[axis_linear_];
-            }else if (started_energy_based && controller->buttons[energy_based_btn]){
-              do_control_msg.data = true;
-              // float speed = 12;
-              // left_vel = (turn_ratio + 1) * speed;
-              // right_vel = (1-turn_ratio) * speed;
-              // left_vel = boost::algorithm::clamp(left_vel, -speed, speed); 
-              // right_vel = boost::algorithm::clamp(right_vel, -speed, speed);
-
             }else{
               started_energy_based = false;
+              do_control_msg.data = false;
               float max_change = 0.5;
               float throttle = (controller->axes[axis_linear_]) * scale_linear_;
               float turn = controller->axes[axis_angular_] * scale_angular_;
@@ -197,9 +191,12 @@ void SimpleJoy::joyCallback(const sensor_msgs::Joy::ConstPtr& joy_msg)
         else{
             drive_pub_.msg_.mode = jackal_msgs::Drive::MODE_NONE;
         }
-        if(!started_energy_based){
+        if(started_energy_based){
+          drive_pub_.unlock();
+        }else{
           drive_pub_.unlockAndPublish();
         }
+        
       }
 
   }

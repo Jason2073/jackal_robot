@@ -26,8 +26,8 @@
   <!-- Translate Sentence messages from the MCU to NavSatFix messages -->
   <node pkg="nmea_navsat_driver" type="nmea_topic_driver" name="nmea_topic_driver" ns="navsat" />
 
-  <include file="$(find jackal_torque_control)/launch/energyControl.launch" />
   <include file="$(find vicon_bridge)/launch/erl_vicon.launch" />
+  <include file="$(find jackal_torque_control)/launch/energyControl.launch" />
 
 
   <!-- Filter raw gyro data into a usable IMU message -->
