@@ -1,7 +1,7 @@
 <launch>
   <arg name="jackal_port" default="/dev/jackal" />
   <arg name="enable_ekf" default="$(optenv ENABLE_EKF true)"/>
-
+  <rosparam command="load" file="$(find jackal_torque_control)/config/control_params.yaml"/>
   <node pkg="jackal_base" type="jackal_teleop_joy_pwm" name="jackal_teleop_joy_pwm">
     <rosparam>
       # TODO: Specify these in code rather than here.
