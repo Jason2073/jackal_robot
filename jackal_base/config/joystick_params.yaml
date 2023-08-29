@@ -1,0 +1,7 @@
+joystick:
+  scale_angular: .5
+  scale_linear: .5
+control:
+  max_change: .5
+  max_velocity: 20
+  min_vel: .1

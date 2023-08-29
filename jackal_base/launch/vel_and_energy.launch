@@ -1,8 +1,9 @@
 <launch>
   <arg name="jackal_port" default="/dev/jackal" />
   <arg name="enable_ekf" default="$(optenv ENABLE_EKF true)"/>
-  <rosparam command="load" file="$(find jackal_torque_control)/config/control_params.yaml"/>
-  <node pkg="jackal_base" type="jackal_teleop_joy_pwm" name="jackal_teleop_joy_pwm">
+  
+  <rosparam command="load" file="$(find jackal_base)/config/joystick_params.yaml"/>
+  <node pkg="jackal_base" type="jackal_teleop_joy_pwm" name="jackal_teleop_joy_pwm", output="screen">
     <rosparam>
       # TODO: Specify these in code rather than here.
       require:
@@ -16,7 +17,7 @@
           - wifi_connected
     </rosparam>
     <param name="port" value="$(arg jackal_port)" />
-    <param name="control_mode" value="3"/>
+    <param name="control_mode" value="2"/>
     <param name="wireless_interface" value="$(optenv JACKAL_WIRELESS_INTERFACE wlp2s0)" />
   </node>
 

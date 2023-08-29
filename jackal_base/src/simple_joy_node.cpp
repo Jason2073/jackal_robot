@@ -35,6 +35,7 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSI
 #include <rosserial_server/serial_session.h>
 #include "boost/algorithm/clamp.hpp"
 #include "realtime_tools/realtime_publisher.h"
+#include <stdlib.h> 
 
 namespace jackal_teleop
 {
@@ -43,7 +44,7 @@ class SimpleJoy
 {
 public:
   explicit SimpleJoy(ros::NodeHandle* nh);
-  void controlThread(/*ros::Rate rate*/);
+  void controlThread();
 
 private:
   void joyCallback(const sensor_msgs::Joy::ConstPtr& joy);
@@ -69,7 +70,10 @@ private:
 
   bool sent_deadman_msg_;
   bool controller_alive;
-  int mode; // 0 = basic pwm, 1 = torque, 2 = vel
+  float max_change; // maximum change in angular velocity of each wheel per cycle (rad/s per cycle)
+  float max_velocity; // maximum velocity per wheel (rad/s)
+  float min_vel; // small velocity to set instead of zero to prevent braking.
+  int mode; // 0 = basic pwm, 2 = vel
   sensor_msgs::Joy::ConstPtr controller;
 
 };
@@ -82,14 +86,22 @@ SimpleJoy::SimpleJoy(ros::NodeHandle* nh) : nh_(nh)
 
   ros::param::param("/bluetooth_teleop/circle", energy_based_btn, 1);
 
-  ros::param::param("~scale_linear", scale_linear_, 0.5f);
-  ros::param::param("~scale_angular", scale_angular_, 0.5f);
+  ros::param::param("/joystick/scale_linear", scale_linear_, 0.5f);
+  ros::param::param("/joystick/scale_angular", scale_angular_, 0.5f);
+  ros::param::param("/control/max_change", max_change, 0.5f);
+  ros::param::param("/control/max_velocity", max_velocity, 20.0f);
+  ros::param::param("/control/min_vel", min_vel, 0.1f);
   ros::param::param("~control_mode", mode, 0);
-  // ROS_ERROR("Starting Joystick control with control_mode: %d", mode);
-  if(mode == 0 || mode == 3){
+
+  ROS_INFO("Starting Joystick control with control_mode: %d", mode);
+  ROS_INFO("MODES:\n\t0: basic velocity control\n\t1: publish velocity setpoint only (/vel_setpoint topic)\n\t2: velocity control + energy based control");
+
+  if(mode == 0){ 
+    // publish commands directly to jackal
     drive_pub_.init(*nh_, "cmd_drive", 1);
   }else{
-    drive_pub_.init(*nh_, "ctrl_setpoint", 1);
+    // publish to intermediate topic for other nodes to use
+    drive_pub_.init(*nh_, "vel_setpoint", 1);
   }
   
   do_control_pub_ = nh_->advertise<std_msgs::Bool>("/do_control", 1, true);
@@ -115,93 +127,64 @@ void SimpleJoy::joyCallback(const sensor_msgs::Joy::ConstPtr& joy_msg)
   
 
   void SimpleJoy::controlThread(/*ros::Rate rate*/){
-      
-      if (controller_alive && drive_pub_.trylock()){
+
+    if (controller_alive && drive_pub_.trylock()){
         
-        if (controller->buttons[deadman_button_]){
-          if(mode == 0){ // do basic control
-            // drive_pub_.msg_.mode = jackal_msgs::Drive::MODE_PWM;
-            float linear = controller->axes[axis_linear_] * scale_linear_;
-            float angular = controller->axes[axis_angular_] * scale_angular_;
-            float left_pwm = boost::algorithm::clamp(linear - angular, -1.0, 1.0);
-            float right_pwm = boost::algorithm::clamp(linear + angular, -1.0, 1.0);
-            
-            drive_pub_.msg_.mode = jackal_msgs::Drive::MODE_VELOCITY;
-            left_pwm *= 15;
-            right_pwm *= 15;
-
-            drive_pub_.msg_.drivers[jackal_msgs::Drive::LEFT] = left_pwm;
-            drive_pub_.msg_.drivers[jackal_msgs::Drive::RIGHT] = right_pwm;
-          }else if(mode == 1){ //do torque control
-            float torque_scale = 0.025;
-            drive_pub_.msg_.mode = jackal_msgs::Drive::MODE_VELOCITY;
-
-            float throttle = torque_scale*(controller->axes[axis_linear_]);
-
-            float turn = controller->axes[axis_angular_]*torque_scale;
-            float left_torque = boost::algorithm::clamp(throttle-turn, -torque_scale, torque_scale);
-            float right_torque = boost::algorithm::clamp(throttle+turn, -torque_scale, torque_scale);
-
-            drive_pub_.msg_.drivers[jackal_msgs::Drive::LEFT] = left_torque;
-            drive_pub_.msg_.drivers[jackal_msgs::Drive::RIGHT] = right_torque;
-          }else{ // do velocity control + energy_based if running
-            std_msgs::Bool do_control_msg;
-            do_control_msg.data = false;
-
-            drive_pub_.msg_.mode = jackal_msgs::Drive::MODE_VELOCITY;
-            float turn_ratio = 0;
-            float left_vel = 0;
-            float right_vel = 0;
-            if(controller->buttons[energy_based_btn]){
-              //ROS_ERROR_STREAM("STARTING CONTROL MSG");
-              do_control_msg.data = true;
-              started_energy_based = true;
-              // turn_ratio = controller->axes[axis_linear_];
-            }else{
-              started_energy_based = false;
-              do_control_msg.data = false;
-              float max_change = 0.5;
-              float throttle = (controller->axes[axis_linear_]) * scale_linear_;
-              float turn = controller->axes[axis_angular_] * scale_angular_;
-              float vel_scale = 20;
-              left_vel = boost::algorithm::clamp(vel_scale*(throttle-turn), -vel_scale, vel_scale);
-              right_vel = boost::algorithm::clamp(vel_scale*(throttle+turn), -vel_scale, vel_scale);
-              
-              left_vel = boost::algorithm::clamp(left_vel, last_left-max_change, last_left+max_change);
-              right_vel = boost::algorithm::clamp(right_vel, last_right-max_change, last_right+max_change);
-              
-              if(left_vel < 0.1 && left_vel > -0.1){
-                left_vel = 0.1;
-              }
-
-              if(right_vel < 0.1 && right_vel > -0.1){
-                right_vel = 0.1; 
-              }
-
-              last_left = left_vel;
-              last_right = right_vel;
-            }
-
-            drive_pub_.msg_.drivers[jackal_msgs::Drive::LEFT] = left_vel;
-            drive_pub_.msg_.drivers[jackal_msgs::Drive::RIGHT] = right_vel;
-            do_control_pub_.publish(do_control_msg);
-          }
-
-        }
-        else{
-            drive_pub_.msg_.mode = jackal_msgs::Drive::MODE_NONE;
-        }
-        if(started_energy_based){
-          drive_pub_.unlock();
-        }else{
-          drive_pub_.unlockAndPublish();
-        }
-        
+      if (!controller->buttons[deadman_button_]){ // safety button, if not held down, stop the robot
+        drive_pub_.msg_.mode = jackal_msgs::Drive::MODE_NONE;
+        drive_pub_.msg_.drivers[jackal_msgs::Drive::LEFT] = 0;
+        drive_pub_.msg_.drivers[jackal_msgs::Drive::RIGHT] = 0;
+        drive_pub_.unlockAndPublish();
+        return;
       }
 
+      // do velocity control + energy_based if running
+      std_msgs::Bool do_control_msg;
+      do_control_msg.data = false;
+      
+      if(controller->buttons[energy_based_btn] && mode == 3){
+        do_control_msg.data = true;
+        started_energy_based = true;
+      }else{
+        drive_pub_.msg_.mode = jackal_msgs::Drive::MODE_VELOCITY;
+        started_energy_based = false;
+        do_control_msg.data = false;
+        float throttle = (controller->axes[axis_linear_]) * scale_linear_;
+        float turn = controller->axes[axis_angular_] * scale_angular_;
+        
+        float left_vel = boost::algorithm::clamp(max_velocity*(throttle-turn), -max_velocity, max_velocity);
+        float right_vel = boost::algorithm::clamp(max_velocity*(throttle+turn), -max_velocity, max_velocity);
+        
+        left_vel = boost::algorithm::clamp(left_vel, last_left-max_change, last_left+max_change);
+        right_vel = boost::algorithm::clamp(right_vel, last_right-max_change, last_right+max_change);
+        
+        //prevent setting velocities to zero, this enters "brake mode" on the jackal controller, 
+        if(abs(left_vel) < min_vel){
+          left_vel = std::copysign(min_vel, left_vel);
+        }
+
+        if(abs(right_vel) < min_vel){
+          right_vel = std::copysign(min_vel, right_vel); 
+        }
+
+        last_left = left_vel;
+        last_right = right_vel;
+    
+        drive_pub_.msg_.drivers[jackal_msgs::Drive::LEFT] = left_vel;
+        drive_pub_.msg_.drivers[jackal_msgs::Drive::RIGHT] = right_vel;
+      }
+
+      do_control_pub_.publish(do_control_msg); // true for energy based control, false otherwise
+
+      if(started_energy_based){
+        // if we are doing energy based control, release the lock but do not publish a drive command
+        drive_pub_.unlock(); 
+      }else{
+        drive_pub_.unlockAndPublish();
+      }
+    }  
   }
 }
-
 
 
 int main(int argc, char *argv[])
@@ -220,3 +203,5 @@ int main(int argc, char *argv[])
   // boost::thread(boost::bind(&jackal_teleop::SimpleJoy::controlThread, &simple_joy, ros::Rate(50)));
   ros::spin();
 }
+
+
