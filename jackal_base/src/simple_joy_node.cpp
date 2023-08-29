@@ -159,6 +159,7 @@ void SimpleJoy::joyCallback(const sensor_msgs::Joy::ConstPtr& joy_msg)
         right_vel = boost::algorithm::clamp(right_vel, last_right-max_change, last_right+max_change);
         
         //prevent setting velocities to zero, this enters "brake mode" on the jackal controller, 
+        // set to min val with matching sign
         if(abs(left_vel) < min_vel){
           left_vel = std::copysign(min_vel, left_vel);
         }
