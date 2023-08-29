@@ -17,7 +17,7 @@
           - wifi_connected
     </rosparam>
     <param name="port" value="$(arg jackal_port)" />
-    <param name="control_mode" value=0/>
+    <param name="control_mode" value="0"/>
     <param name="wireless_interface" value="$(optenv JACKAL_WIRELESS_INTERFACE wlp2s0)" />
   </node>
 
