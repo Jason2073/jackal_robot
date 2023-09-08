@@ -142,7 +142,7 @@ void SimpleJoy::joyCallback(const sensor_msgs::Joy::ConstPtr& joy_msg)
       std_msgs::Bool do_control_msg;
       do_control_msg.data = false;
       
-      if(controller->buttons[energy_based_btn] && mode == 3){
+      if(controller->buttons[energy_based_btn] && mode == 2){
         do_control_msg.data = true;
         started_energy_based = true;
       }else{
