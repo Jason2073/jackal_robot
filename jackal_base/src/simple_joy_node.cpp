@@ -31,7 +31,7 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSI
 #include <boost/thread.hpp>
 #include <boost/chrono.hpp>
 #include <string>
-#include "std_msgs/Bool.h"
+#include "std_msgs/Int32.h"
 #include <rosserial_server/serial_session.h>
 #include "boost/algorithm/clamp.hpp"
 #include "realtime_tools/realtime_publisher.h"
@@ -64,6 +64,8 @@ private:
   int axis_throttle_;
   int axis_turn_;
   int energy_based_btn;
+  int do_lemniscate_btn;
+  int do_circle_btn;
   bool started_energy_based;
   float last_left;
   float last_right;
@@ -85,6 +87,8 @@ SimpleJoy::SimpleJoy(ros::NodeHandle* nh) : nh_(nh)
   ros::param::param("/bluetooth_teleop/rx", axis_angular_, 0);
 
   ros::param::param("/bluetooth_teleop/circle", energy_based_btn, 1);
+  ros::param::param("/bluetooth_teleop/square", do_lemniscate_btn, 2);
+  ros::param::param("/bluetooth_teleop/triangle", do_circle_btn, 3);
 
   ros::param::param("/joystick/scale_linear", scale_linear_, 0.5f);
   ros::param::param("/joystick/scale_angular", scale_angular_, 0.5f);
@@ -104,7 +108,7 @@ SimpleJoy::SimpleJoy(ros::NodeHandle* nh) : nh_(nh)
     drive_pub_.init(*nh_, "vel_setpoint", 1);
   }
   
-  do_control_pub_ = nh_->advertise<std_msgs::Bool>("/do_control", 1, true);
+  do_control_pub_ = nh_->advertise<std_msgs::Int32>("/do_control", 1, true);
   joy_sub_ = nh_->subscribe<sensor_msgs::Joy>("/bluetooth_teleop/joy", 1, &SimpleJoy::joyCallback, this);
   controller_alive = false;
   started_energy_based = false;
@@ -139,16 +143,22 @@ void SimpleJoy::joyCallback(const sensor_msgs::Joy::ConstPtr& joy_msg)
       }
 
       // do velocity control + energy_based if running
-      std_msgs::Bool do_control_msg;
-      do_control_msg.data = false;
+      std_msgs::Int32 do_control_msg;
+      do_control_msg.data = 0;
       
       if(controller->buttons[energy_based_btn] && mode == 2){
-        do_control_msg.data = true;
+        do_control_msg.data = 1;
+        started_energy_based = true;
+      }else if(controller->buttons[do_circle_btn] && mode ==2){
+        do_control_msg.data = 2;
+        started_energy_based = true;
+      }else if(controller->buttons[do_lemniscate_btn] && mode ==2){
+        do_control_msg.data = 3;
         started_energy_based = true;
       }else{
         drive_pub_.msg_.mode = jackal_msgs::Drive::MODE_VELOCITY;
         started_energy_based = false;
-        do_control_msg.data = false;
+        do_control_msg.data = 0;
         float throttle = (controller->axes[axis_linear_]) * scale_linear_;
         float turn = controller->axes[axis_angular_] * scale_angular_;
         
