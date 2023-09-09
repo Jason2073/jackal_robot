@@ -35,6 +35,10 @@
     <include file="$(find vicon_bridge)/launch/erl_vicon.launch" />
   </group>
 
+  <group if="$(eval not arg('enable_vicon'))">
+    <include file="$(find hector_odom)/launch/odom.launch" />
+  </group>
+
 
   <!-- Filter raw gyro data into a usable IMU message -->
   <node pkg="imu_filter_madgwick" type="imu_filter_node" name="imu_filter">

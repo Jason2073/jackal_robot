@@ -32,6 +32,7 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSI
 #include <boost/chrono.hpp>
 #include <string>
 #include "std_msgs/Int32.h"
+#include "std_msgs/String.h"
 #include <rosserial_server/serial_session.h>
 #include "boost/algorithm/clamp.hpp"
 #include "realtime_tools/realtime_publisher.h"
@@ -54,6 +55,7 @@ private:
   ros::Subscriber joy_sub_;
   ros::Publisher control_pub_;
   ros::Publisher do_control_pub_;
+  ros::Publisher reset_hector_slam_pub_;
   realtime_tools::RealtimePublisher<jackal_msgs::Drive> drive_pub_;
 
   int deadman_button_;
@@ -64,6 +66,7 @@ private:
   int axis_throttle_;
   int axis_turn_;
   int energy_based_btn;
+  int reset_slam_btn;
   int do_lemniscate_btn;
   int do_circle_btn;
   bool started_energy_based;
@@ -89,6 +92,7 @@ SimpleJoy::SimpleJoy(ros::NodeHandle* nh) : nh_(nh)
   ros::param::param("/bluetooth_teleop/circle", energy_based_btn, 1);
   ros::param::param("/bluetooth_teleop/square", do_lemniscate_btn, 2);
   ros::param::param("/bluetooth_teleop/triangle", do_circle_btn, 3);
+  ros::param::param("/bluetooth_teleop/x", reset_slam_btn, 4);
 
   ros::param::param("/joystick/scale_linear", scale_linear_, 0.5f);
   ros::param::param("/joystick/scale_angular", scale_angular_, 0.5f);
@@ -110,6 +114,7 @@ SimpleJoy::SimpleJoy(ros::NodeHandle* nh) : nh_(nh)
   
   do_control_pub_ = nh_->advertise<std_msgs::Int32>("/do_control", 1, true);
   joy_sub_ = nh_->subscribe<sensor_msgs::Joy>("/bluetooth_teleop/joy", 1, &SimpleJoy::joyCallback, this);
+  reset_hector_slam_pub_ = nh_->advertise<std_msgs::String>("/syscommand", 1, true);
   controller_alive = false;
   started_energy_based = false;
   last_left = 0;
@@ -133,7 +138,13 @@ void SimpleJoy::joyCallback(const sensor_msgs::Joy::ConstPtr& joy_msg)
   void SimpleJoy::controlThread(/*ros::Rate rate*/){
 
     if (controller_alive && drive_pub_.trylock()){
-        
+
+      if(controller->buttons[reset_slam_btn]){
+        std_msgs::String reset_slam_msg;
+        reset_slam_msg.data = "reset";
+        reset_hector_slam_pub_.publish(reset_slam_msg);
+      } 
+
       if (!controller->buttons[deadman_button_]){ // safety button, if not held down, stop the robot
         drive_pub_.msg_.mode = jackal_msgs::Drive::MODE_NONE;
         drive_pub_.msg_.drivers[jackal_msgs::Drive::LEFT] = 0;
